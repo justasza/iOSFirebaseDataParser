@@ -10,31 +10,43 @@ struct Main: ParsableCommand {
     @Option(help: "Specify the input CSV file path")
     var source = ""
     
-    @Option(help: "Choose between 'ios' for iOS version or 'device' for device model")
-    var mode: String = "ios"
+    @Option(help: "Choose between 'os' for iOS versions or 'devices' for devices models")
+    var mode: String = ""
     
     public func run() throws {
-        Figlet.say("Usage Data")
+        try validateOptions()
+        
+        Figlet.say("STATS")
         do {
             let csvReader = try loadCSV(from: source)
             
             let content = extractRelevantData(from: csvReader)
             
-            if mode.lowercased() == "ios" {
+            if mode.lowercased() == "os" {
                 let iOSUsageData = parseData(content, by: .iOSVersion)
                 displayTable(for: iOSUsageData, label: "iOS Version")
-            } else if mode.lowercased() == "device" {
+            } else if mode.lowercased() == "devices" {
                 let deviceUsageData = parseData(content, by: .deviceModel)
                 displayTable(for: deviceUsageData, label: "Device Model")
             } else {
                 print("Invalid mode. Use 'ios' or 'device'.")
             }
         } catch {
-            print("Error: \(error.localizedDescription)")
+            print("Error: \(error)")
         }
     }
     
-    /// Load CSV file and return a CSVReader
+    private func validateOptions() throws {
+          if source.isEmpty {
+              throw ValidationError("The CSV file path must be provided.")
+          }
+
+          let validModes = ["os", "devices"]
+          if !validModes.contains(mode.lowercased()) {
+              throw ValidationError("Invalid mode. Use 'ios' or 'device'.")
+          }
+      }
+    
     func loadCSV(from path: String) throws -> CSVReader {
         guard let inputStream = InputStream(fileAtPath: path) else {
             throw NSError(domain: "Error", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not open file at path: \(path)"])
@@ -42,11 +54,8 @@ struct Main: ParsableCommand {
         
         let reader = try CSVReader(stream: inputStream, hasHeaderRow: true)
         
-        // Skip comment rows until the actual header row is found
         while let row = reader.next() {
-            // Check if the row does not start with a comment "#"
             if let firstCell = row.first, !firstCell.hasPrefix("#") {
-                // Validate that the row contains "Device model" or "OS with version"
                 try validateHeader(row: row)
                 break
             }
@@ -55,7 +64,6 @@ struct Main: ParsableCommand {
         return reader
     }
     
-    /// Validate that the required headers are present in the CSV file
     func validateHeader(row: [String]) throws {
         // Ensure the row contains "Device model" or "OS with version"
         if !(row.contains("Device model") || row.contains("OS with version")) {
@@ -63,7 +71,6 @@ struct Main: ParsableCommand {
         }
     }
     
-    /// Extract relevant data from CSVReader, filtering comments and headers
     func extractRelevantData(from reader: CSVReader) -> String {
         var data = ""
         while reader.next() != nil {
@@ -81,13 +88,11 @@ struct Main: ParsableCommand {
         return data
     }
     
-    /// Determine if a row should be ignored based on comments or unwanted prefixes
     func shouldIgnoreRow(_ row: [String]) -> Bool {
         guard let firstCell = row.first else { return true }
         return firstCell.starts(with: "#") || firstCell.starts(with: "OS with")
     }
     
-    /// Parse the relevant data into a dictionary based on the mode (iOS Version or Device Model)
     func parseData(_ data: String, by grouping: Grouping) -> [String: Int] {
         let lines = data.split { $0.isNewline }
         var usageData: [String: Int] = [:]
@@ -108,7 +113,6 @@ struct Main: ParsableCommand {
         return usageData
     }
     
-    /// Display the usage data in a formatted table
     private func displayTable(for usageData: [String: Int], label: String) {
         let totalUsers = usageData.values.reduce(0, +)
         guard totalUsers > 0 else {
@@ -135,13 +139,11 @@ struct Main: ParsableCommand {
     }
 }
 
-/// Grouping modes for parsing data
 enum Grouping {
     case iOSVersion
     case deviceModel
 }
 
-/// A safe way to access array elements
 extension Array {
     subscript(safe index: Index) -> Element? {
         return indices.contains(index) ? self[index] : nil
